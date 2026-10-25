@@ -1,3 +1,0 @@
-pip install --upgrade pip && pip install -r requirements.txt
-
-gunicorn -c gunicorn.conf.py -b 0.0.0.0:$43212 app:app
