@@ -207,6 +207,37 @@ body {
     cursor: pointer;
 }
 
+.mute-btn {
+    margin-top: 16px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--muted);
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.mute-btn:hover {
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+#opponent-presence {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+
+.presence-online {
+    color: var(--good);
+}
+
+.presence-offline {
+    color: var(--bad);
+}
+
 .game {
     min-height: 100vh;
     display: flex;

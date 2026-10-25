@@ -14,7 +14,7 @@ from decouple import config
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config('SECRET_KEY')
-app.config['SQLALCHEMY_DATABASE_URI'] = config('DATABASE_URI')
+app.config['SQLALCHEMY_DATABASE_URI'] = config('DATABASE_URI', default="sqlite:///wallrush.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_size": 30,
@@ -63,7 +63,7 @@ class GameMatch(db.Model):
 
 TURN_TIMEOUT = 20
 EMOJI_COOLDOWN = 3
-DISCONNECT_GRACE = 10
+DISCONNECT_GRACE = 30
 FINISHED_ROOM_TTL = 120
 WIN_POINTS = 10
 LOSE_POINTS = 5
@@ -593,6 +593,16 @@ def on_identify(data):
         'points': profile.points or 0,
     })
 
+    # A brief socket interruption must not silently lose a matchmaking ticket.
+    # The client will continue polling, while this immediate status confirms
+    # that the server still has the player queued after a reconnect.
+    if token in queue:
+        emit('queue_status', {
+            'position': queue.index(token) + 1,
+            'queue_size': len(queue),
+            'reconnected': True,
+        })
+
     code = token_room.get(token)
     if code and code in rooms:
         r = rooms[code]
@@ -634,6 +644,9 @@ def check_disconnect_grace(token, code):
         if time.time() - disconnected_at[token] < DISCONNECT_GRACE:
             return
         disconnected_at.pop(token, None)
+        # Queue entries survive disconnects until the grace window expires.
+        # This is deliberately done here rather than in on_disconnect so a
+        # polling blip/backgrounded tab can reconnect without losing place.
         if token in queue:
             queue.remove(token)
         if not code or code not in rooms:
@@ -672,11 +685,14 @@ def on_find_match():
     if existing and existing in rooms and rooms[existing].get('finished'):
         abandon_finished_room(token)
     if token in queue:
-        emit('queue_status', {'position': queue.index(token) + 1})
+        emit('queue_status', {
+            'position': queue.index(token) + 1,
+            'queue_size': len(queue),
+        })
         return
     queue.append(token)
     print(f"[wallrush] find_match queue size={len(queue)} tokens={queue}")
-    emit('queue_status', {'position': len(queue)})
+    emit('queue_status', {'position': len(queue), 'queue_size': len(queue)})
     if len(queue) >= 2:
         t1, t2 = queue.pop(0), queue.pop(0)
         s1, s2 = sid_for(t1), sid_for(t2)
@@ -729,6 +745,8 @@ def on_create_room():
     token = sid_token.get(sid)
     if not token:
         return
+    if token in queue:
+        queue.remove(token)
     existing = token_room.get(token)
     if existing and existing in rooms and not rooms[existing].get('finished'):
         emit('room_created', {'code': existing})
@@ -767,19 +785,24 @@ def on_join_room_code(data):
     token = sid_token.get(sid)
     if not token:
         return
+    if token in queue:
+        queue.remove(token)
     code = (data.get('code') or '').strip().upper()
+    if len(code) != 6:
+        emit('error_msg', 'Enter a 6-character room code.')
+        return
     if code not in rooms:
-        emit('error_msg', 'Room not found')
+        emit('error_msg', 'Room not found — check the code or ask the creator for a new room.')
         return
     room = rooms[code]
     if room.get('finished'):
-        emit('error_msg', 'Room already finished')
+        emit('error_msg', 'This room has already finished. Create or join a new room.')
         return
     if token in room['players']:
         send_room_state(code)
         return
     if len(room['players']) >= 2:
-        emit('error_msg', 'Room is full')
+        emit('error_msg', 'Room is full — ask the creator for a new code.')
         return
     if room['colors']['blue'] is None:
         room['colors']['blue'] = token

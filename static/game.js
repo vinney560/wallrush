@@ -686,6 +686,7 @@ function applyGameMove(player, move, animate = true) {
     const ok = game.applyMove(player, move);
     if (!ok) return false;
     if (animate) {
+        playMoveSound(player, move);
         if (move.type === 'wall') {
             markWallSpawned((move.orient === 'H' ? 'H' : 'V') + move.r + ',' + move.c, player);
         } else if (move.type === 'move') {
@@ -1128,30 +1129,111 @@ document.getElementById('solo-btn').addEventListener('click', () => {
     if (game.turn !== myPlayer) scheduleAI();
 });
 let matchInterval = null;
+let joinTimeout = null;
+let searchingForMatch = false;
+let opponentOnline = true;
+let audioContext = null;
+let audioMuted = false;
+
+try { audioMuted = localStorage.getItem('wallrush.muted') === '1'; } catch { }
+
+function ensureAudio() {
+    if (!audioContext) {
+        try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+    }
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => { });
+}
+function playTone(frequency, duration, type = 'sine', volume = 0.045) {
+    if (audioMuted) return;
+    ensureAudio();
+    if (!audioContext) return;
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    osc.connect(gain).connect(audioContext.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.02);
+}
+function playMoveSound(player, move) {
+    const mine = player === myPlayer;
+    if (move.type === 'wall') {
+        playTone(mine ? 155 : 112, 0.16, 'triangle', 0.055);
+        setTimeout(() => playTone(mine ? 105 : 82, 0.11, 'square', 0.025), 45);
+    } else {
+        playTone(mine ? 620 : 390, 0.13, 'sine', 0.04);
+    }
+}
+function setupAudioControl() {
+    const host = document.querySelector('.landing-content') || document.body;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mute-btn';
+    btn.className = 'mute-btn';
+    const update = () => { btn.textContent = audioMuted ? '🔇 Sound off' : '🔊 Sound on'; };
+    update();
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        audioMuted = !audioMuted;
+        try { localStorage.setItem('wallrush.muted', audioMuted ? '1' : '0'); } catch { }
+        ensureAudio();
+        update();
+    });
+    host.appendChild(btn);
+    document.addEventListener('pointerdown', ensureAudio, { once: true, passive: true });
+}
+
+function setOpponentPresence(online) {
+    opponentOnline = online;
+    const name = document.getElementById('opp-name');
+    if (!name) return;
+    let badge = document.getElementById('opponent-presence');
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'opponent-presence';
+        name.parentElement?.appendChild(badge);
+    }
+    badge.textContent = online ? '● Online' : '● Offline — waiting for reconnect';
+    badge.className = online ? 'presence-online' : 'presence-offline';
+}
+
+function persistSearching(value) {
+    searchingForMatch = value;
+    try { localStorage.setItem('wallrush.searching', value ? '1' : '0'); } catch { }
+}
 
 function stopMatchmaking() {
     if (matchInterval) {
         clearInterval(matchInterval);
         matchInterval = null;
     }
+    if (searchingForMatch) persistSearching(false);
 }
 
 document.getElementById('online-btn').addEventListener('click', () => {
+    ensureAudio();
     if (!socket || !socket.connected) {
         setLandingStatus('Connecting…');
         return;
     }
+    stopMatchmaking();
     resetLandingButtons();
     document.getElementById('online-btn').disabled = true;
     setLandingStatus('Searching for opponent…');
+    persistSearching(true);
     socket.emit('find_match');
-    stopMatchmaking();
     matchInterval = setInterval(() => {
         if (mode === 'multi' || roomCode) { stopMatchmaking(); return; }
         if (socket && socket.connected) socket.emit('find_match');
     }, 3000);
 });
 document.getElementById('create-btn').addEventListener('click', () => {
+    ensureAudio();
+    stopMatchmaking();
     if (!socket || !socket.connected) { setLandingStatus('Connecting…'); return; }
     resetLandingButtons();
     document.getElementById('create-btn').disabled = true;
@@ -1159,6 +1241,8 @@ document.getElementById('create-btn').addEventListener('click', () => {
     socket.emit('create_room');
 });
 document.getElementById('join-btn').addEventListener('click', () => {
+    ensureAudio();
+    stopMatchmaking();
     const code = document.getElementById('code-input').value.trim().toUpperCase();
     if (code.length !== 6) { setLandingStatus('Enter a 6-character code'); return; }
     if (!socket || !socket.connected) { setLandingStatus('Connecting…'); return; }
@@ -1166,11 +1250,19 @@ document.getElementById('join-btn').addEventListener('click', () => {
     document.getElementById('join-btn').disabled = true;
     setLandingStatus('Joining room…');
     socket.emit('join_room_code', { code });
+    clearTimeout(joinTimeout);
+    joinTimeout = setTimeout(() => {
+        joinTimeout = null;
+        resetLandingButtons();
+        setLandingStatus('Joining timed out — the room may have expired. Please try again.');
+    }, 10000);
 });
 document.getElementById('code-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('join-btn').click();
 });
 document.getElementById('leave-btn').addEventListener('click', () => {
+    stopMatchmaking();
+    clearTimeout(joinTimeout);
     if (mode === 'multi' && socket && socket.connected) socket.emit('leave_room');
     closeWinModal();
     returnToLanding();
@@ -1216,9 +1308,26 @@ function initSocket() {
     socket.on('identified', (data) => {
         if (data.profile && mode !== 'multi') myProfile = data.profile;
         updateNames();
+        let wasSearching = false;
+        try { wasSearching = localStorage.getItem('wallrush.searching') === '1'; } catch { }
+        if (wasSearching && mode !== 'multi') {
+            searchingForMatch = true;
+            document.getElementById('online-btn').disabled = true;
+            setLandingStatus('Reconnected — resuming search…');
+            socket.emit('find_match');
+            stopMatchmaking();
+            searchingForMatch = true;
+            matchInterval = setInterval(() => {
+                if (mode === 'multi' || roomCode || !socket?.connected) return;
+                socket.emit('find_match');
+            }, 3000);
+        }
     });
-    socket.on('queue_status', ({ position }) => {
-        setLandingStatus(position > 1 ? 'Matching…' : 'Searching for opponent…');
+    socket.on('queue_status', ({ position, queue_size, reconnected }) => {
+        const count = queue_size || position || 1;
+        setLandingStatus(position > 1
+            ? `Searching… (${count} in queue) · position ${position}`
+            : (reconnected ? 'Reconnected — waiting for opponent…' : 'Waiting for opponent…'));
     });
     socket.on('matched', ({ code }) => {
         stopMatchmaking();
@@ -1236,6 +1345,7 @@ function initSocket() {
         });
     });
     socket.on('room_state', (state) => {
+        clearTimeout(joinTimeout);
         stopMatchmaking();
         if (state.finished) {
             returnToLanding();
@@ -1244,6 +1354,7 @@ function initSocket() {
         mode = 'multi';
         myPlayer = state.my_color === 'blue' ? 0 : 1;
         applyRoomState(state);
+        setOpponentPresence(!state.waiting);
         if (state.turn_started_at && state.turn_timeout) {
             const elapsed = Date.now() / 1000 - state.turn_started_at;
             turnDeadline = Date.now() + Math.max(0, state.turn_timeout - elapsed) * 1000;
@@ -1258,8 +1369,14 @@ function initSocket() {
         updatePanel();
         toast('Opponent joined');
     });
-    socket.on('peer_online', () => toast('Opponent reconnected'));
-    socket.on('peer_offline', () => toast('Opponent disconnected — waiting…'));
+    socket.on('peer_online', () => {
+        setOpponentPresence(true);
+        toast('Opponent reconnected');
+    });
+    socket.on('peer_offline', () => {
+        setOpponentPresence(false);
+        toast('Opponent disconnected — waiting…');
+    });
     socket.on('peer_move', (move) => {
         applyGameMove(game.turn, move);
         resetTurnTimer();
@@ -1344,15 +1461,21 @@ function initSocket() {
         returnToLanding();
     });
     socket.on('error_msg', (msg) => {
+        stopMatchmaking();
+        clearTimeout(joinTimeout);
         setLandingStatus(msg);
         resetLandingButtons();
     });
     socket.on('queue_cancelled', () => {
+        stopMatchmaking();
         resetLandingButtons();
         setLandingStatus('Search cancelled');
     });
     socket.on('disconnect', () => {
-        if (mode === 'multi') toast('Disconnected');
+        if (mode === 'multi') {
+            setOpponentPresence(false);
+            toast('Connection lost — reconnecting…');
+        }
     });
 }
 
@@ -1361,6 +1484,7 @@ initMathBg();
 sessionToken = loadToken();
 installTamperGuard();
 initSocket();
+setupAudioControl();
 setupWallDrag();
 ensureTimerUI();
 updateNames();
