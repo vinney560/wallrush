@@ -1,10 +1,10 @@
 const SIZE = 9;
-const WALLS = 5;
+const WALLS = 15;
 const CELL = 52;
 const WT = 8;
 const W = SIZE * CELL;
 const WALL_THRESH = CELL * 0.4;
-const TURN_TIMEOUT = 20;
+const TURN_TIMEOUT = 60;
 const EMOJI_COOLDOWN = 3;
 
 const COLOR_THEMES = {
