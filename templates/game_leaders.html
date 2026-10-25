@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaderboard — WallRush</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/static/leaders.css" />
+</head>
+
+<body>
+
+    <div class="leaders-app">
+        <header class="leaders-header">
+            <a href="/game/" class="back-btn" aria-label="Back to game">
+                <i class="fas fa-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <div class="header-center">
+                <h1><i class="fas fa-trophy"></i> Leaderboard</h1>
+                <p class="header-sub">Top WallRush players</p>
+            </div>
+            <div class="live-indicator" id="live-indicator">Live</div>
+        </header>
+
+        <div class="filters" id="filters">
+            <button class="filter-chip active" data-range="all">
+                <i class="fas fa-infinity"></i>
+                <span>All Time</span>
+            </button>
+            <button class="filter-chip" data-range="week">
+                <i class="fas fa-calendar-week"></i>
+                <span>This Week</span>
+            </button>
+            <button class="filter-chip" data-range="day">
+                <i class="fas fa-calendar-day"></i>
+                <span>Today</span>
+            </button>
+        </div>
+
+        <!-- Current User's Stats Card -->
+        <div class="user-stats-card hidden" id="user-stats-card">
+            <div class="user-stats-header">
+                <i class="fas fa-user-circle"></i>
+                <span>Your Ranking</span>
+            </div>
+            <div class="user-stats-content" id="user-stats-content">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="podium" id="podium"></div>
+        <div class="leaderboard-list" id="leaderboard-list"></div>
+
+        <div class="empty-state" id="empty-state">
+            <div class="empty-icon"><i class="fas fa-trophy"></i></div>
+            <p class="empty-title">No champions yet</p>
+            <p class="empty-hint">Win your first match to claim the top spot</p>
+        </div>
+    </div>
+
+    <div class="player-modal hidden" id="player-modal">
+        <div class="player-modal-card">
+            <button class="close-btn" id="close-player" aria-label="Close">
+                <i class="fas fa-xmark"></i>
+            </button>
+            <div class="player-header" id="player-header"></div>
+            <div class="match-list" id="match-list"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/static/leaders.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>WallRush</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+    <section id="landing" class="landing">
+        <canvas id="math-bg"></canvas>
+        <div class="landing-content">
+            <h1 class="landing-title">Wall<span>Rush</span></h1>
+            <p class="landing-sub">Block their way</p>
+            <div class="menu">
+                <button id="solo-btn" class="menu-btn primary">Play vs AI</button>
+                <button id="online-btn" class="menu-btn">Play Online</button>
+                <a href="/game/leaders" class="leave-btn" style="text-align:center;text-decoration:none;display:block;margin-top:6px">Leaderboard</a>
+                <div class="menu-divider"><span>or</span></div>
+                <button id="create-btn" class="menu-btn">Create Room</button>
+                <div class="join-row">
+                    <input id="code-input" placeholder="Room code" maxlength="6" autocomplete="off" />
+                    <button id="join-btn" class="menu-btn">Join</button>
+                </div>
+            </div>
+            <div class="landing-status" id="landing-status"></div>
+        </div>
+    </section>
+
+    <section id="game" class="game hidden">
+        <div class="game-shell">
+            <div class="board-column">
+
+                <div class="player-ribbon" id="opp-ribbon">
+                    <svg class="ribbon-bg" viewBox="0 0 400 64" preserveAspectRatio="none" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="hl-grad-opp" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="rgba(255,255,255,0.28)" />
+                                <stop offset="45%" stop-color="rgba(255,255,255,0)" />
+                                <stop offset="100%" stop-color="rgba(0,0,0,0.18)" />
+                            </linearGradient>
+                        </defs>
+                        <path class="ribbon-fill"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                        <path fill="url(#hl-grad-opp)"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                        <path fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"
+                            vector-effect="non-scaling-stroke"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                    </svg>
+                    <div class="ribbon-content">
+                        <span class="avatar" id="opp-avatar">🐺</span>
+                        <span class="name" id="opp-name">Opponent</span>
+                        <span class="wall-badge" id="opp-wall-badge">🧱 10</span>
+                    </div>
+                    <div class="emoji-float" id="opp-emoji-float"></div>
+                </div>
+
+                <div class="board-wrap"><canvas id="board"></canvas></div>
+
+                <div class="player-ribbon" id="user-ribbon">
+                    <svg class="ribbon-bg" viewBox="0 0 400 64" preserveAspectRatio="none" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="hl-grad-user" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="rgba(255,255,255,0.28)" />
+                                <stop offset="45%" stop-color="rgba(255,255,255,0)" />
+                                <stop offset="100%" stop-color="rgba(0,0,0,0.18)" />
+                            </linearGradient>
+                        </defs>
+                        <path class="ribbon-fill"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                        <path fill="url(#hl-grad-user)"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                        <path fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"
+                            vector-effect="non-scaling-stroke"
+                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
+                    </svg>
+                    <div class="ribbon-content">
+                        <span class="avatar" id="user-avatar">🦊</span>
+                        <span class="name" id="user-name">You</span>
+                        <span class="wall-badge" id="user-wall-badge">🧱 10</span>
+                    </div>
+                    <div class="emoji-float" id="user-emoji-float"></div>
+                </div>
+
+            </div>
+
+            <aside class="panel">
+                <div class="status" id="status">Your turn</div>
+
+                <div class="wall-inventory">
+                    <div class="inv-label">Drag a wall</div>
+                    <div class="inv-pieces">
+                        <div class="wall-piece h" data-orient="H" id="piece-h"></div>
+                        <div class="wall-piece v" data-orient="V" id="piece-v"></div>
+                    </div>
+                    <div class="wall-remaining">
+                        <span id="wall-count">10</span> walls remaining
+                    </div>
+                </div>
+
+                <div class="emoji-panel">
+                    <div class="inv-label">Reactions</div>
+                    <div class="emoji-picker">
+                        <button class="emoji-btn" data-emoji="👍">👍</button>
+                        <button class="emoji-btn" data-emoji="🔥">🔥</button>
+                        <button class="emoji-btn" data-emoji="😂">😂</button>
+                        <button class="emoji-btn" data-emoji="😭">😭</button>
+                        <button class="emoji-btn" data-emoji="😎">😎</button>
+                        <button class="emoji-btn" data-emoji="🤔">🤔</button>
+                        <button class="emoji-btn" data-emoji="💀">💀</button>
+                        <button class="emoji-btn" data-emoji="🎉">🎉</button>
+                    </div>
+                </div>
+
+                <button id="reset" class="reset-btn">New Game</button>
+                <button id="leave-btn" class="leave-btn">Exit Game</button>
+                <div class="room-info hidden" id="room-info">
+                    Room <strong id="room-code-display">------</strong>
+                </div>
+            </aside>
+        </div>
+    </section>
+
+    <div id="win-modal" class="win-modal hidden">
+        <div class="flowers" id="flowers"></div>
+        <div class="win-card">
+            <div class="win-emoji" id="win-emoji">🏆</div>
+            <h2 class="win-title" id="win-title">You Win!</h2>
+            <p class="win-sub" id="win-sub">Well played</p>
+            <button class="win-btn" id="win-again">Play Again</button>
+            <button class="win-exit-btn" id="win-exit">Return to Menu</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/static/game.js"></script>
+</body>
+
+</html>
