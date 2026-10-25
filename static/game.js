@@ -1127,12 +1127,29 @@ document.getElementById('solo-btn').addEventListener('click', () => {
     enterGameView();
     if (game.turn !== myPlayer) scheduleAI();
 });
+let matchInterval = null;
+
+function stopMatchmaking() {
+    if (matchInterval) {
+        clearInterval(matchInterval);
+        matchInterval = null;
+    }
+}
+
 document.getElementById('online-btn').addEventListener('click', () => {
-    if (!socket || !socket.connected) { setLandingStatus('Connecting…'); return; }
+    if (!socket || !socket.connected) {
+        setLandingStatus('Connecting…');
+        return;
+    }
     resetLandingButtons();
     document.getElementById('online-btn').disabled = true;
     setLandingStatus('Searching for opponent…');
     socket.emit('find_match');
+    stopMatchmaking();
+    matchInterval = setInterval(() => {
+        if (mode === 'multi' || roomCode) { stopMatchmaking(); return; }
+        if (socket && socket.connected) socket.emit('find_match');
+    }, 3000);
 });
 document.getElementById('create-btn').addEventListener('click', () => {
     if (!socket || !socket.connected) { setLandingStatus('Connecting…'); return; }
@@ -1204,6 +1221,7 @@ function initSocket() {
         setLandingStatus(position > 1 ? 'Matching…' : 'Searching for opponent…');
     });
     socket.on('matched', ({ code }) => {
+        stopMatchmaking();
         setLandingStatus(`Matched! Room <strong>${code}</strong>`);
     });
     socket.on('room_created', ({ code }) => {
@@ -1218,6 +1236,7 @@ function initSocket() {
         });
     });
     socket.on('room_state', (state) => {
+        stopMatchmaking();
         if (state.finished) {
             returnToLanding();
             return;

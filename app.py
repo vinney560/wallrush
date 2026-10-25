@@ -617,15 +617,12 @@ def on_disconnect():
     if not token:
         return
     token_sid.pop(token, None)
-    if token in queue:
-        queue.remove(token)
     code = token_room.get(token)
-    if not code or code not in rooms:
-        return
-    if rooms[code].get('rematch_requester') == token:
-        rooms[code].pop('rematch_requester', None)
     disconnected_at[token] = time.time()
-    send_to_others(code, 'peer_offline', {}, sender_token=token)
+    if code and code in rooms:
+        if rooms[code].get('rematch_requester') == token:
+            rooms[code].pop('rematch_requester', None)
+        send_to_others(code, 'peer_offline', {}, sender_token=token)
     socketio.start_background_task(check_disconnect_grace, token, code)
 
 
@@ -637,7 +634,9 @@ def check_disconnect_grace(token, code):
         if time.time() - disconnected_at[token] < DISCONNECT_GRACE:
             return
         disconnected_at.pop(token, None)
-        if code not in rooms:
+        if token in queue:
+            queue.remove(token)
+        if not code or code not in rooms:
             return
         r = rooms[code]
         if r.get('finished'):
@@ -664,6 +663,7 @@ def on_find_match():
     sid = request.sid
     token = sid_token.get(sid)
     if not token:
+        print(f"[wallrush] find_match: no token for sid={sid}")
         return
     existing = token_room.get(token)
     if existing and existing in rooms and not rooms[existing].get('finished'):
@@ -672,8 +672,10 @@ def on_find_match():
     if existing and existing in rooms and rooms[existing].get('finished'):
         abandon_finished_room(token)
     if token in queue:
+        emit('queue_status', {'position': queue.index(token) + 1})
         return
     queue.append(token)
+    print(f"[wallrush] find_match queue size={len(queue)} tokens={queue}")
     emit('queue_status', {'position': len(queue)})
     if len(queue) >= 2:
         t1, t2 = queue.pop(0), queue.pop(0)
@@ -683,6 +685,7 @@ def on_find_match():
                 queue.insert(0, t1)
             if s2 and t2 != t1:
                 queue.insert(0, t2)
+            print(f"[wallrush] find_match: stale queue, requeued")
             return
         code = gen_code()
         colors = {'blue': t1, 'red': t2}
@@ -706,6 +709,7 @@ def on_find_match():
         except Exception as e:
             print(f"[wallrush] find_match insert FAILED: {e}")
             db.session.rollback()
+        print(f"[wallrush] MATCHED {code}: {t1} vs {t2}")
         socketio.emit('matched', {'code': code}, to=s1)
         socketio.emit('matched', {'code': code}, to=s2)
         send_room_state(code)
