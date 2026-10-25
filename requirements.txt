@@ -38,6 +38,10 @@ markupsafe==3.0.4
     #   flask
     #   jinja2
     #   werkzeug
+psycopg==3.3.6
+    # via -r requirements.in
+psycopg-binary==3.3.6
+    # via psycopg
 python-decouple==3.8
     # via -r requirements.in
 python-engineio==4.14.0
@@ -51,7 +55,9 @@ sqlalchemy==2.1.6
     #   -r requirements.in
     #   flask-sqlalchemy
 typing-extensions==4.16.0
-    # via sqlalchemy
+    # via
+    #   psycopg
+    #   sqlalchemy
 werkzeug==3.1.9
     # via
     #   flask
