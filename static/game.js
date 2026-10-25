@@ -899,6 +899,7 @@ function resetRematchUI() {
 
 function showWinModal(reason) {
     if (modalShownForGame) return;
+    if (game.winner === null) return;
     modalShownForGame = true;
     if (closeModalTimeout) { clearTimeout(closeModalTimeout); closeModalTimeout = null; }
     resetRematchUI();
@@ -917,8 +918,9 @@ function showWinModal(reason) {
         title.textContent = 'Defeat';
         title.className = 'win-title lose';
         sub.textContent = reason === 'timeout' ? 'You ran out of time'
-            : reason === 'opponent_left' ? 'You left the game'
-                : `${oppProfile.name} wins`;
+            : reason === 'you_left' ? 'You left the game'
+                : reason === 'opponent_left' ? 'Opponent left'
+                    : `${oppProfile.name} wins`;
         emoji.textContent = '💀';
     }
     modal.classList.remove('hidden');
@@ -1064,6 +1066,10 @@ function returnToLanding() {
 }
 
 function applyRoomState(state) {
+    if (state.finished) {
+        returnToLanding();
+        return;
+    }
     closeWinModal();
     modalShownForGame = false;
     roomCode = state.code;
@@ -1084,7 +1090,6 @@ function applyRoomState(state) {
     updateNames();
     updatePanel();
     enterGameView();
-    if (game.winner !== null) showWinModal();
 }
 
 document.getElementById('solo-btn').addEventListener('click', () => {
@@ -1213,6 +1218,10 @@ function initSocket() {
         });
     });
     socket.on('room_state', (state) => {
+        if (state.finished) {
+            returnToLanding();
+            return;
+        }
         mode = 'multi';
         myPlayer = state.my_color === 'blue' ? 0 : 1;
         applyRoomState(state);
@@ -1267,6 +1276,7 @@ function initSocket() {
         }
     });
     socket.on('match_ended', ({ winner_token, reason, opponent_gone }) => {
+        if (mode !== 'multi') return;
         if (winner_token === sessionToken) game.winner = myPlayer;
         else game.winner = 1 - myPlayer;
         updatePanel();

@@ -1,4 +1,7 @@
-import json, secrets, string, time
+import json
+import secrets
+import string
+import time
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect
@@ -33,9 +36,7 @@ socketio = SocketIO(
     always_connect=True,
     max_http_buffer_size=1e6,
     ping_interval=3,
-    )
-
-
+)
 db = SQLAlchemy(app)
 
 
@@ -378,9 +379,26 @@ def _columns(table):
         return set()
 
 
+def _columns_pg(table):
+    try:
+        rows = db.session.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = :t"
+        ), {'t': table}).fetchall()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+
+def get_columns(table):
+    if db.engine.dialect.name == 'sqlite':
+        return _columns(table)
+    return _columns_pg(table)
+
+
 def migrate_schema():
     with app.app_context():
-        prof_cols = _columns('game_profiles')
+        prof_cols = get_columns('game_profiles')
         if prof_cols and 'points' not in prof_cols:
             try:
                 db.session.execute(text(
@@ -392,7 +410,7 @@ def migrate_schema():
                 db.session.rollback()
                 print(f"[wallrush] migrate points FAILED: {e}")
 
-        match_cols = _columns('game_matches')
+        match_cols = get_columns('game_matches')
         if match_cols and 'winner_id' not in match_cols:
             try:
                 db.session.execute(text(
@@ -412,8 +430,11 @@ def compute_leaders(range_key='all', limit=100):
     elif range_key == 'day':
         cutoff = datetime.now() - timedelta(days=1)
 
+    is_pg = db.engine.dialect.name == 'postgresql'
+    finished_clause = "m.finished = TRUE" if is_pg else "m.finished = 1"
+
     if cutoff:
-        sql = text("""
+        sql = text(f"""
             SELECT p.token, p.name, p.avatar, p.points,
                    COUNT(m.code) AS games,
                    COALESCE(SUM(CASE WHEN m.winner_id = p.token THEN 1 ELSE 0 END), 0) AS wins,
@@ -421,7 +442,7 @@ def compute_leaders(range_key='all', limit=100):
             FROM game_profiles p
             LEFT JOIN game_matches m
               ON (m.blue_token = p.token OR m.red_token = p.token)
-             AND m.finished = 1
+             AND {finished_clause}
              AND m.created_at >= :cutoff
             GROUP BY p.token, p.name, p.avatar, p.points
             ORDER BY p.points DESC, wins DESC, last_played DESC, p.created_at ASC
@@ -429,7 +450,7 @@ def compute_leaders(range_key='all', limit=100):
         """)
         params = {'lim': limit, 'cutoff': cutoff}
     else:
-        sql = text("""
+        sql = text(f"""
             SELECT p.token, p.name, p.avatar, p.points,
                    COUNT(m.code) AS games,
                    COALESCE(SUM(CASE WHEN m.winner_id = p.token THEN 1 ELSE 0 END), 0) AS wins,
@@ -437,7 +458,7 @@ def compute_leaders(range_key='all', limit=100):
             FROM game_profiles p
             LEFT JOIN game_matches m
               ON (m.blue_token = p.token OR m.red_token = p.token)
-             AND m.finished = 1
+             AND {finished_clause}
             GROUP BY p.token, p.name, p.avatar, p.points
             ORDER BY p.points DESC, wins DESC, last_played DESC, p.created_at ASC
             LIMIT :lim
@@ -472,14 +493,16 @@ def compute_leaders(range_key='all', limit=100):
 
 
 def recent_matches_for(token, limit=20):
-    sql = text("""
+    is_pg = db.engine.dialect.name == 'postgresql'
+    finished_clause = "m.finished = TRUE" if is_pg else "m.finished = 1"
+    sql = text(f"""
         SELECT m.code, m.blue_token, m.red_token, m.winner_id, m.created_at,
                b.name AS blue_name, b.avatar AS blue_avatar,
                r.name AS red_name,  r.avatar AS red_avatar
         FROM game_matches m
         LEFT JOIN game_profiles b ON b.token = m.blue_token
         LEFT JOIN game_profiles r ON r.token = m.red_token
-        WHERE (m.blue_token = :t OR m.red_token = :t) AND m.finished = 1
+        WHERE (m.blue_token = :t OR m.red_token = :t) AND {finished_clause}
         ORDER BY m.created_at DESC
         LIMIT :lim
     """)
@@ -493,7 +516,7 @@ def recent_matches_for(token, limit=20):
 
 def reload_state():
     with app.app_context():
-        if not _columns('game_matches'):
+        if not get_columns('game_matches'):
             return
         cutoff = datetime.now() - timedelta(hours=24)
         for m in GameMatch.query.filter(
@@ -522,7 +545,7 @@ def reload_state():
 
 def purge_old_matches():
     with app.app_context():
-        if not _columns('game_matches'):
+        if not get_columns('game_matches'):
             return
         cutoff = datetime.now() - timedelta(days=7)
         db.session.execute(text(
@@ -569,10 +592,22 @@ def on_identify(data):
         'token': token,
         'points': profile.points or 0,
     })
+
     code = token_room.get(token)
     if code and code in rooms:
-        send_room_state(code)
-        send_to_others(code, 'peer_online', {}, sender_token=token)
+        r = rooms[code]
+        if r.get('finished'):
+            token_room.pop(token, None)
+            if token in r['players']:
+                r['players'].remove(token)
+            for c, t in r['colors'].items():
+                if t == token:
+                    r['colors'][c] = None
+            if not r['players']:
+                del rooms[code]
+        else:
+            send_room_state(code)
+            send_to_others(code, 'peer_online', {}, sender_token=token)
 
 
 @socketio.on('disconnect')
@@ -643,10 +678,10 @@ def on_find_match():
     if len(queue) >= 2:
         t1, t2 = queue.pop(0), queue.pop(0)
         s1, s2 = sid_for(t1), sid_for(t2)
-        if not s1 or not s2:
+        if not s1 or not s2 or t1 == t2:
             if s1:
                 queue.insert(0, t1)
-            elif s2:
+            if s2 and t2 != t1:
                 queue.insert(0, t2)
             return
         code = gen_code()
