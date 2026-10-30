@@ -71,24 +71,8 @@
         <div class="game-shell">
             <div class="board-column">
 
-                <div class="player-ribbon" id="opp-ribbon">
-                    <svg class="ribbon-bg" viewBox="0 0 400 64" preserveAspectRatio="none" aria-hidden="true">
-                        <defs>
-                            <linearGradient id="hl-grad-opp" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stop-color="rgba(255,255,255,0.28)" />
-                                <stop offset="45%" stop-color="rgba(255,255,255,0)" />
-                                <stop offset="100%" stop-color="rgba(0,0,0,0.18)" />
-                            </linearGradient>
-                        </defs>
-                        <path class="ribbon-fill"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                        <path fill="url(#hl-grad-opp)"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                        <path fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"
-                            vector-effect="non-scaling-stroke"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                    </svg>
-                    <div class="ribbon-content">
+                <div class="player-ribbon" id="opp-ribbon" aria-label="Opponent">
+                    <div class="ribbon-content player-line">
                         <span class="avatar" id="opp-avatar">🐺</span>
                         <span class="name" id="opp-name">Opponent</span>
                         <span class="wall-badge" id="opp-wall-badge">🧱 10</span>
@@ -96,26 +80,10 @@
                     <div class="emoji-float" id="opp-emoji-float"></div>
                 </div>
 
-                <div class="board-wrap"><canvas id="board"></canvas></div>
+                <div class="board-wrap"><canvas id="board" aria-label="WallRush game board" role="img"></canvas></div>
 
-                <div class="player-ribbon" id="user-ribbon">
-                    <svg class="ribbon-bg" viewBox="0 0 400 64" preserveAspectRatio="none" aria-hidden="true">
-                        <defs>
-                            <linearGradient id="hl-grad-user" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stop-color="rgba(255,255,255,0.28)" />
-                                <stop offset="45%" stop-color="rgba(255,255,255,0)" />
-                                <stop offset="100%" stop-color="rgba(0,0,0,0.18)" />
-                            </linearGradient>
-                        </defs>
-                        <path class="ribbon-fill"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                        <path fill="url(#hl-grad-user)"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                        <path fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"
-                            vector-effect="non-scaling-stroke"
-                            d="M 4 32 Q 20 8 60 8 L 340 8 Q 380 8 396 32 Q 380 56 340 56 L 60 56 Q 20 56 4 32 Z" />
-                    </svg>
-                    <div class="ribbon-content">
+                <div class="player-ribbon" id="user-ribbon" aria-label="Your player">
+                    <div class="ribbon-content player-line">
                         <span class="avatar" id="user-avatar">🦊</span>
                         <span class="name" id="user-name">You</span>
                         <span class="wall-badge" id="user-wall-badge">🧱 10</span>
@@ -126,13 +94,15 @@
             </div>
 
             <aside class="panel">
-                <div class="status" id="status">Your turn</div>
+                <div class="status" id="status" aria-live="polite">Your turn</div>
 
                 <div class="wall-inventory">
                     <div class="inv-label">Drag a wall</div>
                     <div class="inv-pieces">
-                        <div class="wall-piece h" data-orient="H" id="piece-h"></div>
-                        <div class="wall-piece v" data-orient="V" id="piece-v"></div>
+                        <div class="wall-piece h" data-orient="H" id="piece-h" aria-label="Drag horizontal wall"
+                            title="Drag horizontal wall"></div>
+                        <div class="wall-piece v" data-orient="V" id="piece-v" aria-label="Drag vertical wall"
+                            title="Drag vertical wall"></div>
                     </div>
                     <div class="wall-remaining">
                         <span id="wall-count">10</span> walls remaining

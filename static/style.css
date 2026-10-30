@@ -276,9 +276,13 @@ body {
 
 .player-ribbon {
     position: relative;
-    height: 64px;
+    height: 34px;
     color: var(--blue);
     transition: color 0.3s;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(138, 144, 160, 0.35);
+    border-bottom-color: color-mix(in srgb, currentColor 42%, transparent);
 }
 
 .player-ribbon.blue {
@@ -287,6 +291,12 @@ body {
 
 .player-ribbon.red {
     color: var(--red);
+}
+
+#user-ribbon {
+    border-bottom: 0;
+    border-top: 1px solid rgba(138, 144, 160, 0.35);
+    border-top-color: color-mix(in srgb, currentColor 42%, transparent);
 }
 
 .ribbon-bg {
@@ -305,34 +315,41 @@ body {
 .ribbon-content {
     position: relative;
     z-index: 1;
-    height: 100%;
+    min-height: 100%;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 0 60px;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 4px;
     overflow: hidden;
 }
 
+.player-line {
+    width: 100%;
+}
+
+#user-ribbon .player-line {
+    justify-content: flex-end;
+}
+
 .avatar {
-    font-size: 24px;
-    width: 36px;
-    height: 36px;
+    font-size: 17px;
+    width: 24px;
+    height: 24px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
     border-radius: 50%;
     flex-shrink: 0;
 }
 
 .name {
     font-weight: 800;
-    font-size: 1rem;
+    font-size: 0.82rem;
     letter-spacing: 0.3px;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -340,13 +357,37 @@ body {
 }
 
 .wall-badge {
-    background: rgba(0, 0, 0, 0.3);
-    color: #fff;
-    padding: 3px 8px;
-    border-radius: 8px;
-    font-size: 0.72rem;
+    color: var(--muted);
+    padding: 2px 0;
+    font-size: 0.68rem;
     font-weight: 700;
     flex-shrink: 0;
+}
+
+.player-ribbon::after {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.8;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#opp-ribbon::after {
+    left: -2px;
+}
+
+#user-ribbon::after {
+    right: -2px;
+}
+
+#opponent-presence {
+    display: inline;
+    margin: 0 0 0 4px;
+    font-size: 0.62rem;
 }
 
 .emoji-float {

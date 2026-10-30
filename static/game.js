@@ -41,6 +41,7 @@ class Game {
         this.turn = 0;
         this.winner = null;
         this.history = [];
+        this.version = 0;
     }
     isWallBetween([r1, c1], [r2, c2]) {
         if (r2 !== r1) {
@@ -74,31 +75,25 @@ class Game {
         return moves;
     }
     _hvCross(hr, hc, vr, vc) {
-        if (Math.abs(vc - hc) > 1 || Math.abs(vr - hr) > 1) return false;
-        if (Math.abs(vc - hc) === 1 && Math.abs(vr - hr) === 1) return false;
-        return true;
+        // H(r,c) and V(r,c) cross through their interiors only at the same
+        // slot. Nearby walls may legally meet at an endpoint.
+        return hr === vr && hc === vc;
     }
     _hConflicts(r, c) {
         for (const dc of [-1, 0, 1]) if (this.hWalls.has(`${r},${c + dc}`)) return true;
-        for (const k of this.vWalls.keys()) {
-            const [vr, vc] = k.split(',').map(Number);
-            if (this._hvCross(r, c, vr, vc)) return true;
-        }
-        return false;
+        return this.vWalls.has(`${r},${c}`);
     }
     _vConflicts(r, c) {
         for (const dr of [-1, 0, 1]) if (this.vWalls.has(`${r + dr},${c}`)) return true;
-        for (const k of this.hWalls.keys()) {
-            const [hr, hc] = k.split(',').map(Number);
-            if (this._hvCross(hr, hc, r, c)) return true;
-        }
-        return false;
+        return this.hWalls.has(`${r},${c}`);
     }
     _hasPath(start, goalRow, hSet, vSet) {
         const seen = new Set([start.join(',')]);
         const queue = [start];
-        while (queue.length) {
-            const [r, c] = queue.shift();
+        // queue.shift() moves every remaining item on each step. A head index
+        // keeps drag previews and AI wall checks inexpensive.
+        for (let head = 0; head < queue.length; head++) {
+            const [r, c] = queue[head];
             if (r === goalRow) return true;
             for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
                 const nr = r + dr, nc = c + dc;
@@ -114,15 +109,22 @@ class Game {
         }
         return false;
     }
-    canPlaceWall(player, r, c, orient) {
-        if (this.wallsLeft[player] <= 0) return false;
-        if (r < 0 || r > SIZE - 2 || c < 0 || c > SIZE - 2) return false;
-        if (orient === 'H' ? this._hConflicts(r, c) : this._vConflicts(r, c)) return false;
+    wallPlacementReason(player, r, c, orient) {
+        if (this.wallsLeft[player] <= 0) return 'No walls left';
+        if (r < 0 || r > SIZE - 2 || c < 0 || c > SIZE - 2) return 'Outside the board';
+        if (orient === 'H' ? this._hConflicts(r, c) : this._vConflicts(r, c)) {
+            if (orient === 'H' && this.vWalls.has(`${r},${c}`)) return 'Walls cannot cross';
+            if (orient === 'V' && this.hWalls.has(`${r},${c}`)) return 'Walls cannot cross';
+            return 'Wall overlaps another wall';
+        }
         const nh = orient === 'H' ? new Set([...this.hWalls.keys(), `${r},${c}`]) : new Set(this.hWalls.keys());
         const nv = orient === 'V' ? new Set([...this.vWalls.keys(), `${r},${c}`]) : new Set(this.vWalls.keys());
-        if (!this._hasPath(this.pawns[0], 0, nh, nv)) return false;
-        if (!this._hasPath(this.pawns[1], 8, nh, nv)) return false;
-        return true;
+        if (!this._hasPath(this.pawns[0], 0, nh, nv)) return 'This blocks your path';
+        if (!this._hasPath(this.pawns[1], 8, nh, nv)) return 'This blocks the opponent path';
+        return null;
+    }
+    canPlaceWall(player, r, c, orient) {
+        return this.wallPlacementReason(player, r, c, orient) === null;
     }
     applyMove(player, move) {
         if (this.winner !== null || player !== this.turn) return false;
@@ -136,6 +138,7 @@ class Game {
             this.wallsLeft[player]--;
         } else return false;
         this.history.push(move);
+        this.version++;
         if (this.winner === null) this.turn = 1 - this.turn;
         return true;
     }
@@ -146,8 +149,8 @@ function distToGoal(game, player) {
     const [sr, sc] = game.pawns[player];
     const queue = [[sr, sc, 0]];
     const seen = new Set([`${sr},${sc}`]);
-    while (queue.length) {
-        const [r, c, d] = queue.shift();
+    for (let head = 0; head < queue.length; head++) {
+        const [r, c, d] = queue[head];
         if (r === goalRow) return d;
         for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const nr = r + dr, nc = c + dc;
@@ -316,6 +319,19 @@ const wallSpawn = new Map();
 const impactParticles = [];
 const ui = { hover: null, pulse: 0 };
 const drag = { active: false, orient: null, hoverSlot: null };
+const placementCache = new Map();
+
+function clearPlacementCache() {
+    placementCache.clear();
+}
+
+function getWallPlacementReason(player, r, c, orient) {
+    const key = `${game.version}:${player}:${orient}:${r}:${c}`;
+    if (placementCache.has(key)) return placementCache.get(key);
+    const reason = game.wallPlacementReason(player, r, c, orient);
+    placementCache.set(key, reason);
+    return reason;
+}
 
 function playerColors() { return myPlayer === 0 ? [myColor, oppColor] : [oppColor, myColor]; }
 
@@ -369,7 +385,17 @@ function initMathBg() {
         alpha: 0.05 + Math.random() * 0.09,
         rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.004,
     });
-    function draw() {
+    let lastDraw = 0;
+    function draw(now = 0) {
+        if (document.hidden) {
+            requestAnimationFrame(draw);
+            return;
+        }
+        if (now && now - lastDraw < 1000 / 30) {
+            requestAnimationFrame(draw);
+            return;
+        }
+        lastDraw = now;
         g.clearRect(0, 0, W, H);
         const gs = 56;
         g.strokeStyle = 'rgba(74,158,255,0.045)';
@@ -500,6 +526,7 @@ function snapPawns() {
 function resetVisuals() {
     wallSpawn.clear();
     impactParticles.length = 0;
+    clearPlacementCache();
     snapPawns();
 }
 function stepPhysics(now) {
@@ -672,7 +699,17 @@ function render() {
 }
 
 /* ========== LOOP ========== */
+let lastFrame = 0;
 function loop(now) {
+    if (document.hidden) {
+        requestAnimationFrame(loop);
+        return;
+    }
+    if (now - lastFrame < 1000 / 30) {
+        requestAnimationFrame(loop);
+        return;
+    }
+    lastFrame = now;
     ui.pulse = now;
     periodicTamperCheck(now);
     stepPhysics(now);
@@ -685,6 +722,7 @@ function loop(now) {
 function applyGameMove(player, move, animate = true) {
     const ok = game.applyMove(player, move);
     if (!ok) return false;
+    clearPlacementCache();
     if (animate) {
         playMoveSound(player, move);
         if (move.type === 'wall') {
@@ -721,8 +759,8 @@ function updateDragPreview(clientX, clientY) {
     if (x < 0 || x > canvas.width || y < 0 || y > canvas.height) { drag.hoverSlot = null; return; }
     const slot = findSlotForDrag(x, y, drag.orient);
     if (!slot) { drag.hoverSlot = null; return; }
-    const valid = game.canPlaceWall(myPlayer, slot.r, slot.c, drag.orient);
-    drag.hoverSlot = { r: slot.r, c: slot.c, orient: drag.orient, valid };
+    const reason = getWallPlacementReason(myPlayer, slot.r, slot.c, drag.orient);
+    drag.hoverSlot = { r: slot.r, c: slot.c, orient: drag.orient, valid: !reason, reason };
 }
 function setupWallDrag() {
     document.querySelectorAll('.wall-piece').forEach(piece => {
@@ -750,7 +788,7 @@ function setupWallDrag() {
             if (slot && slot.valid) {
                 const move = { type: 'wall', orient: slot.orient, r: slot.r, c: slot.c };
                 if (applyGameMove(myPlayer, move)) { sendMove(move); afterMove(); }
-            } else if (slot && !slot.valid) toast('Cannot place wall there');
+            } else if (slot && !slot.valid) toast(slot.reason || 'Cannot place wall there');
             updatePanel();
         });
         piece.addEventListener('pointercancel', () => {
@@ -1003,7 +1041,7 @@ function updatePanel() {
         else { el.textContent = 'You lose'; el.classList.add('lose'); }
     } else if (drag.active) {
         el.textContent = drag.hoverSlot
-            ? (drag.hoverSlot.valid ? 'Release to place' : 'Invalid spot')
+            ? (drag.hoverSlot.valid ? 'Release to place' : drag.hoverSlot.reason || 'Invalid spot')
             : 'Drag onto the board';
     } else if (aiThinking) {
         el.textContent = 'Opponent is thinking…';
@@ -1299,7 +1337,9 @@ document.getElementById('reset').addEventListener('click', () => {
 
 /* ========== NETWORK ========== */
 function sendMove(move) {
-    if (socket && socket.connected && mode === 'multi') socket.emit('move', move);
+    if (socket && socket.connected && mode === 'multi') {
+        socket.emit('move', { ...move, version: game.version });
+    }
 }
 function initSocket() {
     if (typeof io === 'undefined' || location.protocol === 'file:') return;
@@ -1378,6 +1418,10 @@ function initSocket() {
         toast('Opponent disconnected — waiting…');
     });
     socket.on('peer_move', (move) => {
+        if (Number.isInteger(move.version) && move.version !== game.version + 1) {
+            toast('Game state out of sync — waiting for server state');
+            return;
+        }
         applyGameMove(game.turn, move);
         resetTurnTimer();
         updatePanel();

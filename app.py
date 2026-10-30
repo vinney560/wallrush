@@ -13,7 +13,7 @@ from decouple import config
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = config('SECRET_KEY')
+app.config['SECRET_KEY'] = config('SECRET_KEY', default="TEST001")
 app.config['SQLALCHEMY_DATABASE_URI'] = config('DATABASE_URI', default="sqlite:///wallrush.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
