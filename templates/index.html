@@ -99,14 +99,26 @@
                 <div class="wall-inventory">
                     <div class="inv-label">Drag a wall</div>
                     <div class="inv-pieces">
-                        <div class="wall-piece h" data-orient="H" id="piece-h" aria-label="Drag horizontal wall"
-                            title="Drag horizontal wall"></div>
-                        <div class="wall-piece v" data-orient="V" id="piece-v" aria-label="Drag vertical wall"
-                            title="Drag vertical wall"></div>
+                        <div class="wall-piece h" data-orient="H" id="piece-h"
+                            aria-label="Drag horizontal wall" title="Drag horizontal wall"></div>
+                        <div class="wall-piece v" data-orient="V" id="piece-v"
+                            aria-label="Drag vertical wall" title="Drag vertical wall"></div>
                     </div>
                     <div class="wall-remaining">
                         <span id="wall-count">10</span> walls remaining
                     </div>
+                </div>
+
+                <div class="replay-panel">
+                    <div class="replay-heading">
+                        <span class="inv-label">Replay</span>
+                        <span id="replay-count">0 moves</span>
+                    </div>
+                    <div class="replay-actions">
+                        <button id="export-video" class="replay-btn video-btn" type="button" disabled>Export Video</button>
+                        <button id="load-video" class="replay-btn" type="button">Load Video</button>
+                    </div>
+                    <input id="video-file" type="file" accept="video/webm,video/mp4,video/*" hidden />
                 </div>
 
                 <div class="emoji-panel">
@@ -138,8 +150,35 @@
             <div class="win-emoji" id="win-emoji">🏆</div>
             <h2 class="win-title" id="win-title">You Win!</h2>
             <p class="win-sub" id="win-sub">Well played</p>
+            <div class="win-replay-actions">
+                <button class="win-replay-btn" id="export-video-modal" type="button">Export Video</button>
+                <button class="win-replay-btn" id="load-video-modal" type="button">Load Video</button>
+            </div>
             <button class="win-btn" id="win-again">Play Again</button>
             <button class="win-exit-btn" id="win-exit">Return to Menu</button>
+        </div>
+    </div>
+
+    <div id="video-viewer" class="video-viewer hidden" aria-hidden="true">
+        <div class="video-card">
+            <div class="video-header">
+                <div>
+                    <span class="video-kicker">WALLRUSH REPLAY</span>
+                    <h2>Game playback</h2>
+                </div>
+                <button id="video-back" class="video-back" type="button">Back</button>
+            </div>
+            <video id="replay-video" controls playsinline preload="metadata"></video>
+            <div class="video-tools">
+                <label for="video-speed">Speed</label>
+                <select id="video-speed">
+                    <option value="0.5">0.5×</option>
+                    <option value="1" selected>1×</option>
+                    <option value="1.5">1.5×</option>
+                    <option value="2">2×</option>
+                </select>
+                <a id="download-video" class="video-download" href="#" download>Download Video</a>
+            </div>
         </div>
     </div>
 

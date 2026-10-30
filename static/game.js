@@ -309,6 +309,11 @@ let turnDeadline = 0;
 let turnTimeoutEmitted = false;
 let lastEmojiSent = 0;
 let modalShownForGame = false;
+let replayMoves = [];
+let replayPlaying = false;
+let replayAbort = false;
+let replayStartedAt = 0;
+let videoRecording = false;
 
 const anim = { pawns: [[8, 4], [0, 4]] };
 const pawnTween = [
@@ -331,6 +336,162 @@ function getWallPlacementReason(player, r, c, orient) {
     const reason = game.wallPlacementReason(player, r, c, orient);
     placementCache.set(key, reason);
     return reason;
+}
+
+function resetReplay() {
+    replayMoves = [];
+    replayStartedAt = performance.now();
+    replayAbort = false;
+    updateReplayUI();
+}
+
+function recordReplayMove(player, move) {
+    if (replayPlaying) return;
+    if (!replayStartedAt) replayStartedAt = performance.now();
+    replayMoves.push({
+        ...move,
+        player,
+        t: Math.max(0, Math.round(performance.now() - replayStartedAt)),
+    });
+    updateReplayUI();
+}
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function supportedVideoMimeType() {
+    if (typeof MediaRecorder === 'undefined') return '';
+    return [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+    ].find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+async function exportReplayVideo() {
+    if (videoRecording || replayPlaying) return;
+    if (!replayMoves.length) {
+        toast('Make at least one move before exporting a video');
+        return;
+    }
+    if (!HTMLCanvasElement.prototype.captureStream || typeof MediaRecorder === 'undefined') {
+        toast('Video recording is not supported by this browser');
+        return;
+    }
+    const mimeType = supportedVideoMimeType();
+    if (!mimeType) {
+        toast('This browser cannot create a WebM video');
+        return;
+    }
+
+    const stream = canvas.captureStream(30);
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 });
+    videoRecording = true;
+    replayPlaying = true;
+    replayAbort = false;
+    updateReplayUI();
+    closeWinModal();
+    toast('Recording video… please wait');
+
+    const stopped = new Promise((resolve, reject) => {
+        recorder.ondataavailable = event => {
+            if (event.data.size > 0) chunks.push(event.data);
+        };
+        recorder.onerror = () => reject(new Error('Video recording failed'));
+        recorder.onstop = resolve;
+    });
+
+    try {
+        game.reset();
+        resetVisuals();
+        updatePanel();
+        recorder.start(250);
+
+        // Every move gets exactly one second. Replay timestamps are ignored.
+        for (const savedMove of replayMoves) {
+            const { player, t, ...move } = savedMove;
+            if (replayAbort) break;
+            if (player !== game.turn || !applyGameMove(game.turn, move, true, false)) {
+                throw new Error('Replay contains an invalid move');
+            }
+            updatePanel();
+            await wait(1000);
+        }
+        recorder.stop();
+        await stopped;
+        if (replayAbort) return;
+
+        const blob = new Blob(chunks, { type: mimeType });
+        if (!blob.size) throw new Error('The browser produced an empty video');
+        const filename = `wallrush-replay-${new Date().toISOString().slice(0, 10)}.webm`;
+        openVideoBlob(blob, filename);
+        toast('Video ready — click Download Video');
+    } catch (error) {
+        if (recorder.state !== 'inactive') recorder.stop();
+        toast(error.message || 'Could not export video');
+    } finally {
+        stream.getTracks().forEach(track => track.stop());
+        videoRecording = false;
+        replayPlaying = false;
+        updateReplayUI();
+        updatePanel();
+    }
+}
+
+let loadedVideoUrl = null;
+
+function openVideoBlob(blob, filename) {
+    if (loadedVideoUrl) URL.revokeObjectURL(loadedVideoUrl);
+    loadedVideoUrl = URL.createObjectURL(blob);
+    const video = document.getElementById('replay-video');
+    const download = document.getElementById('download-video');
+    video.src = loadedVideoUrl;
+    video.playbackRate = Number(document.getElementById('video-speed').value) || 1;
+    download.href = loadedVideoUrl;
+    download.download = filename || `wallrush-replay-${Date.now()}.webm`;
+    const viewer = document.getElementById('video-viewer');
+    viewer.classList.remove('hidden');
+    viewer.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => viewer.classList.add('show'));
+}
+
+function openVideoViewer(file) {
+    const looksLikeVideo = file && (file.type.startsWith('video/') || /\.(webm|mp4|ogg|mov)$/i.test(file.name));
+    if (!looksLikeVideo) {
+        toast('Please choose a video file');
+        return;
+    }
+    openVideoBlob(file, file.name);
+}
+
+function closeVideoViewer() {
+    const viewer = document.getElementById('video-viewer');
+    const video = document.getElementById('replay-video');
+    video.pause();
+    viewer.classList.remove('show');
+    viewer.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+        if (!viewer.classList.contains('show')) {
+            viewer.classList.add('hidden');
+            video.removeAttribute('src');
+            video.load();
+            if (loadedVideoUrl) {
+                URL.revokeObjectURL(loadedVideoUrl);
+                loadedVideoUrl = null;
+            }
+        }
+    }, 220);
+}
+
+function updateReplayUI() {
+    const count = document.getElementById('replay-count');
+    const exportVideo = document.getElementById('export-video');
+    const exportVideoModal = document.getElementById('export-video-modal');
+    if (count) count.textContent = `${replayMoves.length} move${replayMoves.length === 1 ? '' : 's'}`;
+    if (exportVideo) exportVideo.disabled = replayPlaying || !replayMoves.length;
+    if (exportVideoModal) exportVideoModal.disabled = replayPlaying || !replayMoves.length;
 }
 
 function playerColors() { return myPlayer === 0 ? [myColor, oppColor] : [oppColor, myColor]; }
@@ -719,10 +880,11 @@ function loop(now) {
 }
 
 /* ========== APPLY MOVE HELPER ========== */
-function applyGameMove(player, move, animate = true) {
+function applyGameMove(player, move, animate = true, record = true) {
     const ok = game.applyMove(player, move);
     if (!ok) return false;
     clearPlacementCache();
+    if (record) recordReplayMove(player, move);
     if (animate) {
         playMoveSound(player, move);
         if (move.type === 'wall') {
@@ -765,7 +927,7 @@ function updateDragPreview(clientX, clientY) {
 function setupWallDrag() {
     document.querySelectorAll('.wall-piece').forEach(piece => {
         piece.addEventListener('pointerdown', (e) => {
-            if (roomWaiting) return;
+            if (roomWaiting || replayPlaying) return;
             if (game.winner !== null || game.turn !== myPlayer) return;
             if (game.wallsLeft[myPlayer] <= 0) { toast('No walls left'); return; }
             if (mode === 'solo' && aiThinking) return;
@@ -826,7 +988,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('mouseleave', () => { ui.hover = null; });
 canvas.addEventListener('click', (e) => {
-    if (drag.active || roomWaiting) return;
+    if (drag.active || roomWaiting || replayPlaying) return;
     if (!game || game.winner !== null || game.turn !== myPlayer) return;
     const { x, y } = getCanvasPos(e);
     const cell = hitCell(x, y);
@@ -894,6 +1056,26 @@ document.querySelectorAll('.emoji-btn').forEach(btn => {
             socket.emit('emoji', { emoji: btn.dataset.emoji });
         }
     });
+});
+
+document.getElementById('load-video').addEventListener('click', () => {
+    document.getElementById('video-file').click();
+});
+document.getElementById('video-file').addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    openVideoViewer(file);
+});
+document.getElementById('load-video-modal').addEventListener('click', () => {
+    closeWinModal();
+    document.getElementById('video-file').click();
+});
+document.getElementById('export-video').addEventListener('click', exportReplayVideo);
+document.getElementById('export-video-modal').addEventListener('click', exportReplayVideo);
+document.getElementById('video-back').addEventListener('click', closeVideoViewer);
+document.getElementById('video-speed').addEventListener('change', (event) => {
+    document.getElementById('replay-video').playbackRate = Number(event.target.value) || 1;
 });
 
 /* ========== WIN MODAL ========== */
@@ -1060,6 +1242,7 @@ function updatePanel() {
         || game.winner !== null
         || game.turn !== myPlayer
         || myWalls <= 0
+        || replayPlaying
         || (mode === 'solo' && aiThinking);
     document.querySelectorAll('.wall-piece').forEach(p => p.classList.toggle('disabled', disabled));
     const roomInfo = document.getElementById('room-info');
@@ -1124,7 +1307,10 @@ function applyRoomState(state) {
     }
     game.reset();
     resetVisuals();
-    for (const m of state.moves) applyGameMove(game.turn, m, false);
+    resetReplay();
+    for (const m of state.moves) applyGameMove(game.turn, m, false, false);
+    replayMoves = state.moves.map((m, i) => ({ ...m, player: i % 2, t: i * 500 }));
+    updateReplayUI();
     snapPawns();
     updateNames();
     updatePanel();
@@ -1146,12 +1332,16 @@ document.getElementById('solo-btn').addEventListener('click', () => {
         oppProfile = saved.oppProfile;
         game.reset();
         resetVisuals();
-        for (const m of saved.moves) applyGameMove(game.turn, m, false);
+        resetReplay();
+        for (const m of saved.moves) applyGameMove(game.turn, m, false, false);
+        replayMoves = saved.moves.map((m, i) => ({ ...m, player: i % 2, t: i * 500 }));
+        updateReplayUI();
         snapPawns();
         if (game.winner !== null) {
             clearSolo();
             game.reset();
             resetVisuals();
+            resetReplay();
         }
     } else {
         myColor = Math.random() < 0.5 ? 'blue' : 'red';
@@ -1160,6 +1350,7 @@ document.getElementById('solo-btn').addEventListener('click', () => {
         oppProfile = { name: ai.name, avatar: ai.avatar };
         game.reset();
         resetVisuals();
+        resetReplay();
     }
     updateNames();
     updatePanel();
@@ -1309,6 +1500,7 @@ document.getElementById('leave-btn').addEventListener('click', () => {
     roomWaiting = false;
     game.reset();
     resetVisuals();
+    resetReplay();
     turnTimeoutEmitted = false;
     resetTurnTimer();
 });
@@ -1326,6 +1518,7 @@ document.getElementById('reset').addEventListener('click', () => {
     }
     game.reset();
     resetVisuals();
+    resetReplay();
     drag.active = false; drag.orient = null; drag.hoverSlot = null;
     aiThinking = false;
     resetTurnTimer();
@@ -1434,6 +1627,7 @@ function initSocket() {
         modalShownForGame = false;
         game.reset();
         resetVisuals();
+        resetReplay();
         resetTurnTimer();
         updatePanel();
     });
@@ -1531,12 +1725,17 @@ initSocket();
 setupAudioControl();
 setupWallDrag();
 ensureTimerUI();
+resetReplay();
 updateNames();
 updatePanel();
 resetTurnTimer();
 requestAnimationFrame(loop);
 
 document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('video-viewer').classList.contains('hidden')) {
+        closeVideoViewer();
+        return;
+    }
     if (document.getElementById('game').classList.contains('hidden')) return;
     if (e.key === 'r' || e.key === 'R') document.getElementById('reset').click();
     const idx = parseInt(e.key, 10);
